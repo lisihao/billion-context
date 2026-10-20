@@ -493,6 +493,24 @@ export class UnifiedShadow {
         return this.store.restoreArchived(sessionId, opts);
     }
 
+    /** #3928: pass-through single-session archive / footprint / shrink
+     *  (see UnifiedStore equivalents) for the CLI maintenance surface. */
+    archiveSession(sessionId: string, opts: { archiveDir: string }): { ok: boolean; exportPath?: string; reason?: string; contentRowsDeleted?: number } {
+        return this.store.archiveSession(sessionId, opts);
+    }
+
+    sessionStorageStats(sessionId: string): import("./store.ts").SessionStorageStats {
+        return this.store.sessionStorageStats(sessionId);
+    }
+
+    vacuum(mode: "full" | "incremental"): void {
+        return this.store.vacuum(mode);
+    }
+
+    gcPlan(archiveAfterDays: number, now?: number): import("./store.ts").GcPlan {
+        return this.store.gcPlan(archiveAfterDays, now);
+    }
+
     rawMessages(sessionId: string): { seq: number; content: string }[] {
         this.assertLive();
         return this.store.getMessages(sessionId).map((m) => ({ seq: m.seq, content: m.content }));
