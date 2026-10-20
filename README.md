@@ -1,3 +1,5 @@
+> **Solar-maintained distribution:** self-use repair packages and checksums are published in [this fork's Releases](https://github.com/lisihao/billion-context/releases). See [SOLAR.md](SOLAR.md) for carried fixes, installation and upgrade ownership.
+
 # billion-context
 
 <p align="center"><a href="./README.md">English</a> | <a href="./README.zh-CN.md">中文</a></p>

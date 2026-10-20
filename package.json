@@ -53,11 +53,11 @@
   "author": "ranxianglei",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ranxianglei/billion-context.git"
+    "url": "git+https://github.com/lisihao/billion-context.git"
   },
-  "homepage": "https://github.com/ranxianglei/billion-context#readme",
+  "homepage": "https://github.com/lisihao/billion-context#readme",
   "bugs": {
-    "url": "https://github.com/ranxianglei/billion-context/issues"
+    "url": "https://github.com/lisihao/billion-context/issues"
   },
   "dependencies": {
     "zod": "4.1.8"
