@@ -1,5 +1,7 @@
 > **Solar-maintained distribution:** self-use repair packages and checksums are published in [this fork's Releases](https://github.com/lisihao/billion-context/releases). See [SOLAR.md](SOLAR.md) for carried fixes, installation and upgrade ownership.
 
+> **Session-continuity candidate:** DSH system/developer prompt relocation and on-demand tool-SDK updates preserve the continuing main session's fold state. The identity projection changes; transmitted prompts, tool capabilities and original logs do not. Validation and installation status are recorded separately in [SOLAR.md](SOLAR.md).
+
 # billion-context
 
 <p align="center"><a href="./README.md">English</a> | <a href="./README.zh-CN.md">中文</a></p>

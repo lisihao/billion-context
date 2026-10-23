@@ -13,6 +13,12 @@ The source baseline is upstream `v0.1.202` / `6deb4547`. The following upstream 
 
 The Solar follow-up adds a regression for calibrated post-fold diagnostics on the Responses/DSH plugin lane. It is proposed separately to the integrated project's upstream.
 
+The session-continuity repair excludes recognized system/developer message carriers from the identity-only conversation projection, before adjacent assistant turns are merged. Moving a complete DSH prompt from the history to top-level instructions, or updating the on-demand tool SDK, therefore keeps a continuing conversation on its existing session and fold state. The wire payload, shared affinity hashes, message/ref identities, persistence format and original logs are unchanged. Independent tasks and review personas still require their own lanes. Existing persona branches are retained; this repair does not merge their reference spaces or blocks into the main session.
+
+Validation uses synthetic Responses requests and a local fake upstream, including real plugin-tool compression, prompt relocation, SDK growth, title-sidecar isolation and reload of a saved main session. It does not establish live token savings; those require a separately user-initiated request. A local candidate is identified by its source commit and tarball SHA-256, even when the package version has not changed. Packing and installing it does not publish a release.
+
+The reload check covers a recognized DSH title sidecar arriving before the continuing main request. It is not a guarantee for an unrecognized auxiliary persona arriving first after restart: old persisted affinity hashes cannot safely be recomputed without the original history. Such a mismatch remains isolated rather than guessing which branch owns the folds. The fork has Issues disabled; the reproduction and acceptance record are carried in the repair PR instead of changing repository settings.
+
 ## Installation and update ownership
 
 Use a tarball from this fork's Release, verify its SHA-256 against `SHA256SUMS`, and install it through the official DSH plugin manager using its absolute local path. Keep a backup of affected profile configuration before installation and fully quit the official app for the update. The file pin intentionally remains a manually maintained package; upstream npm releases do not replace it automatically. Future repairs are built and distributed from this fork.

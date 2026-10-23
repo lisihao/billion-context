@@ -21,8 +21,8 @@
 //
 //   - content-blind by construction (kind ∈ user|assistant|tool|raw|role)
 //   - google `parts` and responses `function_call` items are first-class
-//   - the LEADING system/developer run is stripped (host harness state
-//     churn cannot misalign the skeleton — #1148 discipline)
+//   - system/developer messages at any position are excluded from identity;
+//     their original wire payload and the shared affinity hash domain stay intact
 //   - client synthetic marker turns ("[model changed: …]") are dropped
 //   - image-capability placeholders (#2636) are dropped
 //   - consecutive assistant messages merge, multi-block tool_results
@@ -84,12 +84,20 @@ import { neutralTurns, type NeutralTurn } from "./affinity-neutral.js";
 
 const TAIL_WINDOW = 8;
 
+function conversationTurns(messages: unknown[]): NeutralTurn[] {
+    return neutralTurns(messages.filter((message) => {
+        if (message === null || typeof message !== "object") return true;
+        const { role, type } = message as { role?: unknown; type?: unknown };
+        return (type !== undefined && type !== "message") || (role !== "system" && role !== "developer");
+    }));
+}
+
 /** Order skeleton: the per-turn KIND sequence of the wire-neutral
  *  projection. Content-blind by construction — only role/tool shape
  *  participates. */
 export function orderSkeletonOf(messages: unknown): string[] {
     const list = Array.isArray(messages) ? (messages as unknown[]) : [];
-    return neutralTurns(list).map((t) => t.kind);
+    return conversationTurns(list).map((t) => t.kind);
 }
 
 /** Per-turn content-fragment fingerprints (rule-3 guard rail — never
@@ -154,7 +162,7 @@ function record(rawId: string, turns: NeutralTurn[], tag: string, model?: string
  *  keys, so persisted fork lanes keep their sessions across the upgrade. */
 export function resolveSessionOrder(rawId: string, history: unknown, personaTag?: string, declaredModel?: string): SessionOrderResolution {
     const list = Array.isArray(history) ? (history as unknown[]) : [];
-    const turns = neutralTurns(list);
+    const turns = conversationTurns(list);
     const kinds = turns.map((t) => t.kind);
     const incomingFrags = fragsOf(turns);
     const tag = personaTag !== undefined && personaTag.trim().length > 0 ? personaTag : "";
