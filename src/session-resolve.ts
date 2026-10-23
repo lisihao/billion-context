@@ -21,8 +21,8 @@
 //
 //   - content-blind by construction (kind ∈ user|assistant|tool|raw|role)
 //   - google `parts` and responses `function_call` items are first-class
-//   - the LEADING system/developer run is stripped (host harness state
-//     churn cannot misalign the skeleton — #1148 discipline)
+//   - system/developer messages at any position are excluded from identity;
+//     their original wire payload and the shared affinity hash domain stay intact
 //   - client synthetic marker turns ("[model changed: …]") are dropped
 //   - image-capability placeholders (#2636) are dropped
 //   - consecutive assistant messages merge, multi-block tool_results
@@ -84,12 +84,20 @@ import { neutralTurns, type NeutralTurn } from "./affinity-neutral.js";
 
 const TAIL_WINDOW = 8;
 
+function conversationTurns(messages: unknown[]): NeutralTurn[] {
+    return neutralTurns(messages.filter((message) => {
+        if (message === null || typeof message !== "object") return true;
+        const { role, type } = message as { role?: unknown; type?: unknown };
+        return (type !== undefined && type !== "message") || (role !== "system" && role !== "developer");
+    }));
+}
+
 /** Order skeleton: the per-turn KIND sequence of the wire-neutral
  *  projection. Content-blind by construction — only role/tool shape
  *  participates. */
 export function orderSkeletonOf(messages: unknown): string[] {
     const list = Array.isArray(messages) ? (messages as unknown[]) : [];
-    return neutralTurns(list).map((t) => t.kind);
+    return conversationTurns(list).map((t) => t.kind);
 }
 
 /** Per-turn content-fragment fingerprints (rule-3 guard rail — never
@@ -102,6 +110,43 @@ function fragsOf(turns: NeutralTurn[]): string[] {
 
 const fp16 = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex").slice(0, 16);
 
+/** Complete, non-tool exchanges retained verbatim by history archivers.
+ * Use the full neutral text, not the capped per-message fragment list. */
+function questionAnswerKeys(turns: NeutralTurn[]): string[] {
+    const keys: string[] = [];
+    for (let i = 1; i < turns.length; i++) {
+        const question = turns[i - 1];
+        const answer = turns[i];
+        if (question.kind !== "user" || answer.kind !== "assistant") continue;
+        if (!question.text?.trim() || !answer.text?.trim()) continue;
+        if (question.calls?.length || answer.calls?.length) continue;
+        keys.push(createHash("sha256").update(JSON.stringify([question.text, answer.text]), "utf8").digest("hex"));
+    }
+    return keys;
+}
+
+/** The incoming exchange prefix must be an unambiguous complete suffix of
+ * the previous history, including its newest exchange. New exchanges may
+ * follow; matching isolated old snippets or archive-marker prose is not proof. */
+function retainsQuestionAnswerSuffix(previous: string[], incoming: string[]): boolean {
+    if (previous.length < 2 || incoming.length < 2) return false;
+    const start = previous.indexOf(incoming[0]);
+    const count = previous.length - start;
+    if (start < 0 || count < 2 || incoming.length < count) return false;
+    const frequencies = (keys: string[]): Map<string, number> => {
+        const result = new Map<string, number>();
+        for (const key of keys) result.set(key, (result.get(key) ?? 0) + 1);
+        return result;
+    };
+    const oldCounts = frequencies(previous);
+    const newCounts = frequencies(incoming);
+    for (let i = 0; i < count; i++) {
+        const key = previous[start + i];
+        if (incoming[i] !== key || oldCounts.get(key) !== 1 || newCounts.get(key) !== 1) return false;
+    }
+    return true;
+}
+
 function tailAligns(kinds: string[], recorded: string[]): boolean {
     const window = Math.min(TAIL_WINDOW, kinds.length, recorded.length);
     if (window === 0) return false;
@@ -113,8 +158,8 @@ function tailAligns(kinds: string[], recorded: string[]): boolean {
 
 /** A main conversation has assistant turns and at least a few cells; an
  *  aux persona (dsh auto-review: one flattened user blob) has neither.
- *  This is the ONLY aux/persona discriminator — no system text, no content
- *  hash, no per-client special case. */
+ *  This shape check does not prove identity; changed-persona histories also
+ *  need the order/content continuation guards below. */
 function mainShaped(kinds: string[]): boolean {
     if (kinds.length < 3) return false;
     return kinds.some((k) => k === "assistant");
@@ -130,14 +175,14 @@ export type SessionOrderResolution = {
     reason?: string;
 };
 
-type Recorded = { kinds: string[]; frags: string[]; tag: string; model?: string };
+type Recorded = { kinds: string[]; frags: string[]; qaKeys: string[]; tag: string; model?: string };
 
 /** In-memory order skeletons, same lifetime as the old anchors map
  *  (process memory; not persisted — a restart re-claims on first sight). */
 const skeletons = new Map<string, Recorded>();
 
 function record(rawId: string, turns: NeutralTurn[], tag: string, model?: string): void {
-    skeletons.set(rawId, { kinds: turns.map((t) => t.kind), frags: fragsOf(turns), tag, model });
+    skeletons.set(rawId, { kinds: turns.map((t) => t.kind), frags: fragsOf(turns), qaKeys: questionAnswerKeys(turns), tag, model });
 }
 
 /** #2944 order-primary resolution. `rawId` MUST be a client-minted,
@@ -148,13 +193,14 @@ function record(rawId: string, turns: NeutralTurn[], tag: string, model?: string
  *  host stamps on this lane — dsh system text, codex instructions. Order
  *  claims; the tag only guards the lanes order alone cannot tell apart:
  *  a tag change on CONTINUING history (model switch / AGENTS.md edit —
- *  kinds prefix-align AND head fragments match) migrates the raw key
+ *  kinds prefix-align AND head fragments match, or a complete retained
+ *  exchange suffix matches) migrates the raw key
  *  (#2241/#2250); a tag change with different content forks onto
  *  `<rawId>|sub:<fp16(tag)>` — byte-identical to the old ladder's fork
  *  keys, so persisted fork lanes keep their sessions across the upgrade. */
 export function resolveSessionOrder(rawId: string, history: unknown, personaTag?: string, declaredModel?: string): SessionOrderResolution {
     const list = Array.isArray(history) ? (history as unknown[]) : [];
-    const turns = neutralTurns(list);
+    const turns = conversationTurns(list);
     const kinds = turns.map((t) => t.kind);
     const incomingFrags = fragsOf(turns);
     const tag = personaTag !== undefined && personaTag.trim().length > 0 ? personaTag : "";
@@ -193,8 +239,9 @@ export function resolveSessionOrder(rawId: string, history: unknown, personaTag?
         // keep raw ONLY with order AND content evidence — the kinds must
         // prefix-align the recorded skeleton AND the head fragments must
         // match (the host replayed the SAME conversation under a new
-        // system/instructions: model switch / AGENTS.md edit). Anything
-        // else is a different persona under the shared id (#150 fresh
+        // system/instructions: model switch / AGENTS.md edit), or retained
+        // exchanges prove a host archive below. Otherwise a different
+        // persona under the shared id (#150 fresh
         // task, #1916 auto-review): its own `|sub:<fp16(tag)>` lane,
         // stable across successive calls of the same persona.
         const headN = Math.min(kinds.length, recorded.kinds.length);
@@ -203,6 +250,15 @@ export function resolveSessionOrder(rawId: string, history: unknown, personaTag?
         if (mainShaped(kinds) && headAligns && headFragsEqual) {
             record(rawId, turns, tag, effectiveModel);
             return { key: rawId, action: "reanchor", reason: "persona text changed on continuing history — anchor migrated (#2241/#2250)" };
+        }
+        if (mainShaped(kinds) && retainsQuestionAnswerSuffix(recorded.qaKeys, questionAnswerKeys(turns))) {
+            // A host archive can remove the prefix and middle tool traces
+            // while its SDK/persona text changes. Exact surviving exchanges
+            // prove continuity without trusting a marker or merging lanes.
+            // Fold coverage remains the kernel's decision: absent archived
+            // ranges are not restored merely because this keeps the raw id.
+            record(rawId, turns, tag, effectiveModel);
+            return { key: rawId, action: "reanchor", reason: "persona text changed on a verbatim retained exchange suffix — anchor migrated" };
         }
         if (
             mainShaped(kinds) && model !== undefined && recorded.model !== undefined && model !== recorded.model
