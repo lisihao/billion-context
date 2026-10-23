@@ -1,6 +1,6 @@
 # billion-context
 
-> **Solar 会话连续性候选修复：** DSH 移动 system/developer 提示词的位置或更新按需工具声明时，同一主会话继续使用原有压缩块。本次只调整身份判断所用的投影，不改发送的提示词、工具能力或原始日志。验证和安装状态分别记录在 [SOLAR.md](SOLAR.md)。
+> **Solar 会话连续性候选修复：** DSH 移动提示词、更新工具声明，以及归档后保留可核对的原样问答后缀时，主会话继续沿用原身份。仍在上下文中的压缩范围继续生效，已完全归档的范围不会重新注入。发送的提示词、完整能力和原始日志保持不变。验证与安装状态分别记录在 [SOLAR.md](SOLAR.md)。
 
 <p align="center"><a href="./README.md">English</a> | <a href="./README.zh-CN.md">中文</a></p>
 
