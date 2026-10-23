@@ -9,7 +9,7 @@ on:
     # PRs are gated there) (#772). Note: pushes made with GITHUB_TOKEN from
     # within Actions deliver NO push events — for those, the one-click
     # workflow compensates via workflow_dispatch below.
-    branches: [master, "*_release-v*"]
+    branches: [master, "*_release-v*", "codex/bili-session-continuity"]
   pull_request:
     branches: [master]
     # three-layer CI (#3295): synchronize keeps the CORE matrix blocking on
