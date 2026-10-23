@@ -50,27 +50,17 @@ for (const key of [
 
 const { defaultConfig } = await import("acp-kernel");
 const { startServer } = await import("../src/server.ts");
-const { SessionStore, _setStoreForTest } = await import(
-  "../src/persist.ts"
-);
-const { _setForTest: setRegistryForTest } = await import(
-  "../src/registry.ts"
-);
+const { SessionStore, _setStoreForTest } = await import("../src/persist.ts");
+const { _setForTest: setRegistryForTest } = await import("../src/registry.ts");
 const { _resetPluginStateForTest } = await import("../src/plugin.ts");
-const {
-  getSession,
-  listSessions,
-  peekSession,
-  _resetSessionsForTest,
-} = await import("../src/session.ts");
-const { resetSessionOrderForTest, sessionOrderSkeletonOf } = await import(
-  "../src/session-resolve.ts"
-);
+const { getSession, listSessions, peekSession, _resetSessionsForTest } =
+  await import("../src/session.ts");
+const { resetSessionOrderForTest, sessionOrderSkeletonOf } =
+  await import("../src/session-resolve.ts");
 const { resetToolRingForTest } = await import("../src/tool-ring.ts");
 const { prefixAffinity } = await import("../src/prefix-affinity.ts");
-const { DSH_TITLE_SYSTEM_PREFIX } = await import(
-  "../src/server/side-request.ts"
-);
+const { DSH_TITLE_SYSTEM_PREFIX } =
+  await import("../src/server/side-request.ts");
 
 const RAW_ID = "dsh-r3-archive-folds";
 const MODEL = "responses-r3-archive-fake";
@@ -215,7 +205,9 @@ function rawSession(label: string): Session {
 }
 
 function blockById(session: Session, id: string, label: string) {
-  const block = session.state.blocks.find((candidate) => candidate.blockId === id);
+  const block = session.state.blocks.find(
+    (candidate) => candidate.blockId === id,
+  );
   assert.ok(block, `${label}: block ${id} remains in the durable audit state`);
   return block;
 }
@@ -225,8 +217,13 @@ function evidenceForFold(
   summary: string,
   label: string,
 ): FoldEvidence {
-  const block = session.state.blocks.find((candidate) => candidate.summary === summary);
-  assert.ok(block, `${label}: real plugin compress created its requested block`);
+  const block = session.state.blocks.find(
+    (candidate) => candidate.summary === summary,
+  );
+  assert.ok(
+    block,
+    `${label}: real plugin compress created its requested block`,
+  );
   const rawIds = [...block.effectiveMessageIds];
   assert.ok(rawIds.length > 0, `${label}: the block records covered raw ids`);
   const content = session.blockContents.get(block.blockId);
@@ -248,7 +245,10 @@ function assertFoldContent(
   label: string,
 ): void {
   const content = session.blockContents.get(fold.id);
-  assert.ok(content, `${label}: ${fold.id} originals remain available for audit`);
+  assert.ok(
+    content,
+    `${label}: ${fold.id} originals remain available for audit`,
+  );
   assert.match(
     content.full.text,
     new RegExp(marker),
@@ -263,7 +263,10 @@ function assertRefsUnchanged(
 ): void {
   assert.deepEqual(
     Object.fromEntries(
-      fold.rawIds.map((rawId) => [rawId, session.state.messageRefs.byRaw[rawId]]),
+      fold.rawIds.map((rawId) => [
+        rawId,
+        session.state.messageRefs.byRaw[rawId],
+      ]),
     ),
     fold.refs,
     `${label}: surviving fold refs are never re-numbered`,
@@ -421,7 +424,9 @@ test(
             type: "message",
             status: "completed",
             role: "assistant",
-            content: [{ type: "output_text", text: `fake Responses reply ${n}` }],
+            content: [
+              { type: "output_text", text: `fake Responses reply ${n}` },
+            ],
           },
         ];
         if (body.stream === false) {
@@ -442,7 +447,9 @@ test(
           "cache-control": "no-cache",
         });
         const event = (type: string, data: Json): void => {
-          res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+          res.write(
+            `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`,
+          );
         };
         event("response.created", {
           response: {
@@ -473,7 +480,10 @@ test(
           content_index: 0,
           text: `fake Responses reply ${n}`,
         });
-        event("response.output_item.done", { output_index: 0, item: output[0] });
+        event("response.output_item.done", {
+          output_index: 0,
+          item: output[0],
+        });
         event("response.completed", {
           response: {
             id: `resp_${n}`,
@@ -513,7 +523,11 @@ test(
         mainHeaders(),
         "initial raw Q0..Q3 plus current Q4",
       );
-      assert.equal(bodies.length, 1, "initial request reaches the loopback upstream");
+      assert.equal(
+        bodies.length,
+        1,
+        "initial request reaches the loopback upstream",
+      );
       assert.match(textOf(bodies[0]!), new RegExp(A0));
       assert.match(textOf(bodies[0]!), new RegExp(A1));
 
@@ -522,7 +536,11 @@ test(
       await compress(first.url, "m00001", "m00002", "Q0-A0", FOLD0_SUMMARY);
       await compress(first.url, "m00003", "m00004", "Q1-A1", FOLD1_SUMMARY);
       const beforeArchive = rawSession("two real folds");
-      assert.equal(beforeArchive.state.blocks.length, 2, "exactly two real folds exist");
+      assert.equal(
+        beforeArchive.state.blocks.length,
+        2,
+        "exactly two real folds exist",
+      );
       const fold0 = evidenceForFold(beforeArchive, FOLD0_SUMMARY, "Q0/A0 fold");
       const fold1 = evidenceForFold(beforeArchive, FOLD1_SUMMARY, "Q1/A1 fold");
       assert.deepEqual(
@@ -554,12 +572,32 @@ test(
         "ordinary tool replay with prompt revision",
       );
       const normalBody = textOf(bodies.at(-1)!);
-      assert.equal(count(normalBody, A0), 0, "normal replay keeps Q0/A0 folded");
-      assert.equal(count(normalBody, A1), 0, "normal replay keeps Q1/A1 folded");
-      assert.equal(count(normalBody, FOLD0_SUMMARY), 1, "normal replay renders Q0/A0 summary once");
-      assert.equal(count(normalBody, FOLD1_SUMMARY), 1, "normal replay renders Q1/A1 summary once");
+      assert.equal(
+        count(normalBody, A0),
+        0,
+        "normal replay keeps Q0/A0 folded",
+      );
+      assert.equal(
+        count(normalBody, A1),
+        0,
+        "normal replay keeps Q1/A1 folded",
+      );
+      assert.equal(
+        count(normalBody, FOLD0_SUMMARY),
+        1,
+        "normal replay renders Q0/A0 summary once",
+      );
+      assert.equal(
+        count(normalBody, FOLD1_SUMMARY),
+        1,
+        "normal replay renders Q1/A1 summary once",
+      );
       assert.deepEqual(
-        beforeArchive.state.blocks.map((block) => ({ id: block.blockId, summary: block.summary, active: block.active })),
+        beforeArchive.state.blocks.map((block) => ({
+          id: block.blockId,
+          summary: block.summary,
+          active: block.active,
+        })),
         [
           { id: fold0.id, summary: FOLD0_SUMMARY, active: true },
           { id: fold1.id, summary: FOLD1_SUMMARY, active: true },
@@ -591,10 +629,22 @@ test(
       const reviewChildren = listSessions().filter((session) =>
         session.id.startsWith(`${RAW_ID}|sub:`),
       );
-      assert.equal(reviewChildren.length, 1, "one shallow persona child exists");
+      assert.equal(
+        reviewChildren.length,
+        1,
+        "one shallow persona child exists",
+      );
       const emptyReviewChild = reviewChildren[0]!;
-      assert.equal(emptyReviewChild.state.blocks.length, 0, "shallow persona child receives no folds");
-      assert.equal(emptyReviewChild.blockContents.size, 0, "shallow persona child has no folded originals");
+      assert.equal(
+        emptyReviewChild.state.blocks.length,
+        0,
+        "shallow persona child receives no folds",
+      );
+      assert.equal(
+        emptyReviewChild.blockContents.size,
+        0,
+        "shallow persona child has no folded originals",
+      );
 
       // The graph archive removes Q0/A0 and the middle tool trace, but starts
       // its retained conversation with the unique Q1/A1,Q2/A2,Q3/A3 suffix.
@@ -622,30 +672,84 @@ test(
         emptyReviewChild,
         "retained main history does not connect to the old empty same-tag child",
       );
-      const oldFold = blockById(afterFirstArchive, fold0.id, "first graph archive");
-      const retainedFold = blockById(afterFirstArchive, fold1.id, "first graph archive");
-      assert.equal(oldFold.active, false, "Q0/A0 fold deactivates when its archived prefix disappears");
-      assert.equal(retainedFold.active, true, "Q1/A1 fold remains active when its source remains");
+      const oldFold = blockById(
+        afterFirstArchive,
+        fold0.id,
+        "first graph archive",
+      );
+      const retainedFold = blockById(
+        afterFirstArchive,
+        fold1.id,
+        "first graph archive",
+      );
+      assert.equal(
+        oldFold.active,
+        false,
+        "Q0/A0 fold deactivates when its archived prefix disappears",
+      );
+      assert.equal(
+        retainedFold.active,
+        true,
+        "Q1/A1 fold remains active when its source remains",
+      );
       assertRefsUnchanged(afterFirstArchive, fold1, "first graph archive");
-      assertFoldContent(afterFirstArchive, fold0, A0, "first graph archive audit");
-      assertFoldContent(afterFirstArchive, fold1, A1, "first graph archive audit");
+      assertFoldContent(
+        afterFirstArchive,
+        fold0,
+        A0,
+        "first graph archive audit",
+      );
+      assertFoldContent(
+        afterFirstArchive,
+        fold1,
+        A1,
+        "first graph archive audit",
+      );
       const firstArchiveBody = textOf(bodies.at(-1)!);
-      assert.equal(count(firstArchiveBody, A0), 0, "old Q0/A0 originals never revive after archive");
-      assert.equal(count(firstArchiveBody, FOLD0_SUMMARY), 0, "old Q0/A0 summary does not revive after archive");
-      assert.equal(count(firstArchiveBody, A1), 0, "retained Q1/A1 originals remain folded");
-      assert.equal(count(firstArchiveBody, FOLD1_SUMMARY), 1, "retained Q1/A1 summary remains correct");
-      assert.equal(count(firstArchiveBody, MIDDLE_TOOL_RESULT), 0, "removed middle tool trace is not replayed");
+      assert.equal(
+        count(firstArchiveBody, A0),
+        0,
+        "old Q0/A0 originals never revive after archive",
+      );
+      assert.equal(
+        count(firstArchiveBody, FOLD0_SUMMARY),
+        0,
+        "old Q0/A0 summary does not revive after archive",
+      );
+      assert.equal(
+        count(firstArchiveBody, A1),
+        0,
+        "retained Q1/A1 originals remain folded",
+      );
+      assert.equal(
+        count(firstArchiveBody, FOLD1_SUMMARY),
+        1,
+        "retained Q1/A1 summary remains correct",
+      );
+      assert.equal(
+        count(firstArchiveBody, MIDDLE_TOOL_RESULT),
+        0,
+        "removed middle tool trace is not replayed",
+      );
 
       // Persist the active retained fold, simulate a fresh process, and let a
       // real DSH title sidecar arrive first. Title traffic must not establish a
       // resolver skeleton or disturb the saved raw fold state.
-      assert.equal(firstStore.flushSync(afterFirstArchive), true, "flush after first archive succeeds");
+      assert.equal(
+        firstStore.flushSync(afterFirstArchive),
+        true,
+        "flush after first archive succeeds",
+      );
       await close(firstProxy);
       firstProxy = undefined;
       secondStore = resetRuntime(storeDir);
       const second = await startProxy(upstreamUrl);
       secondProxy = second.server;
-      assert.equal(sessionOrderSkeletonOf(RAW_ID), undefined, "restart clears only in-memory resolver state");
+      assert.equal(
+        sessionOrderSkeletonOf(RAW_ID),
+        undefined,
+        "restart clears only in-memory resolver state",
+      );
       const titleHeaders = mainHeaders();
       await postResponses(
         second.url,
@@ -660,10 +764,20 @@ test(
         titleHeaders,
         "title sidecar arrives before the reloaded main request",
       );
-      assert.equal(sessionOrderSkeletonOf(RAW_ID), undefined, "title sidecar leaves the raw resolver skeleton cold");
+      assert.equal(
+        sessionOrderSkeletonOf(RAW_ID),
+        undefined,
+        "title sidecar leaves the raw resolver skeleton cold",
+      );
       const titleReloaded = rawSession("title sidecar reload");
-      assert.equal(blockById(titleReloaded, fold0.id, "title sidecar reload").active, false);
-      assert.equal(blockById(titleReloaded, fold1.id, "title sidecar reload").active, true);
+      assert.equal(
+        blockById(titleReloaded, fold0.id, "title sidecar reload").active,
+        false,
+      );
+      assert.equal(
+        blockById(titleReloaded, fold1.id, "title sidecar reload").active,
+        true,
+      );
       assertFoldContent(titleReloaded, fold1, A1, "title sidecar reload audit");
 
       // The first real main request after title-first reload must claim the raw
@@ -676,19 +790,28 @@ test(
           stream: true,
           max_output_tokens: 4096,
           instructions: ARCHIVE_PROMPT,
-          input: archiveRoundOne(
-            "ARCHIVE_FOLDS_AFTER_RELOAD_NEWTAIL_SENTINEL",
-          ),
+          input: archiveRoundOne("ARCHIVE_FOLDS_AFTER_RELOAD_NEWTAIL_SENTINEL"),
         },
         mainHeaders(),
         "reloaded main keeps the retained Q1/A1 fold",
       );
       const afterReload = rawSession("reloaded main request");
-      assert.equal(blockById(afterReload, fold1.id, "reloaded main request").active, true);
+      assert.equal(
+        blockById(afterReload, fold1.id, "reloaded main request").active,
+        true,
+      );
       assertRefsUnchanged(afterReload, fold1, "reloaded main request");
       const reloadedBody = textOf(bodies.at(-1)!);
-      assert.equal(count(reloadedBody, A1), 0, "reloaded main keeps Q1/A1 originals folded");
-      assert.equal(count(reloadedBody, FOLD1_SUMMARY), 1, "reloaded main renders the retained summary once");
+      assert.equal(
+        count(reloadedBody, A1),
+        0,
+        "reloaded main keeps Q1/A1 originals folded",
+      );
+      assert.equal(
+        count(reloadedBody, FOLD1_SUMMARY),
+        1,
+        "reloaded main renders the retained summary once",
+      );
 
       // A later rolling archive removes Q1/A1 too. The remaining Q2/A2,Q3/A3
       // suffix still proves the raw lineage, while now-fully-uncovered folds
@@ -707,26 +830,58 @@ test(
         "second graph rolling archive",
       );
       const afterSecondArchive = rawSession("second graph archive");
-      assert.equal(blockById(afterSecondArchive, fold0.id, "second graph archive").active, false);
-      assert.equal(blockById(afterSecondArchive, fold1.id, "second graph archive").active, false);
+      assert.equal(
+        blockById(afterSecondArchive, fold0.id, "second graph archive").active,
+        false,
+      );
+      assert.equal(
+        blockById(afterSecondArchive, fold1.id, "second graph archive").active,
+        false,
+      );
       assertRefsUnchanged(afterSecondArchive, fold1, "second graph archive");
       const secondArchiveBody = textOf(bodies.at(-1)!);
-      assert.equal(count(secondArchiveBody, A0), 0, "second archive never restores Q0/A0 originals");
-      assert.equal(count(secondArchiveBody, A1), 0, "second archive never restores Q1/A1 originals");
-      assert.equal(count(secondArchiveBody, FOLD0_SUMMARY), 0, "second archive does not re-render Q0/A0 summary");
-      assert.equal(count(secondArchiveBody, FOLD1_SUMMARY), 0, "fully uncovered Q1/A1 fold no longer renders");
+      assert.equal(
+        count(secondArchiveBody, A0),
+        0,
+        "second archive never restores Q0/A0 originals",
+      );
+      assert.equal(
+        count(secondArchiveBody, A1),
+        0,
+        "second archive never restores Q1/A1 originals",
+      );
+      assert.equal(
+        count(secondArchiveBody, FOLD0_SUMMARY),
+        0,
+        "second archive does not re-render Q0/A0 summary",
+      );
+      assert.equal(
+        count(secondArchiveBody, FOLD1_SUMMARY),
+        0,
+        "fully uncovered Q1/A1 fold no longer renders",
+      );
 
       // The non-rendered folds and their source material remain durable audit
       // records. Reload directly from the scratch store to prove that this is
       // not merely an in-memory observation.
-      assert.equal(secondStore.flushSync(afterSecondArchive), true, "flush after second archive succeeds");
+      assert.equal(
+        secondStore.flushSync(afterSecondArchive),
+        true,
+        "flush after second archive succeeds",
+      );
       _resetSessionsForTest();
       const audit = getSession(RAW_ID, {
         protocol: "responses",
         upstreamOrigin: upstreamUrl,
       });
-      assert.equal(blockById(audit, fold0.id, "durable archive audit").active, false);
-      assert.equal(blockById(audit, fold1.id, "durable archive audit").active, false);
+      assert.equal(
+        blockById(audit, fold0.id, "durable archive audit").active,
+        false,
+      );
+      assert.equal(
+        blockById(audit, fold1.id, "durable archive audit").active,
+        false,
+      );
       assertRefsUnchanged(audit, fold1, "durable archive audit");
       assertFoldContent(audit, fold0, A0, "durable archive audit");
       assertFoldContent(audit, fold1, A1, "durable archive audit");
