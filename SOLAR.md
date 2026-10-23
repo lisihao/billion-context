@@ -44,6 +44,14 @@ The runtime candidate is `7a203aa0e6efea0d563501c66a40b380dc610e12`, packed as t
 
 A further replay used a copy of the recorded main compression state and retained request bodies against a loopback fake service. The copy was remapped only to the fake upstream storage namespace. Before the archive, b3/b4 each rendered once; after the archive, b3 retained coverage and rendered once, while fully uncovered b4 deactivated and did not render. Original saved state remained unchanged and the complete prompt remained in the outgoing representation. This is local reconstruction, not a captured new provider request or measured token saving. The fork still reports no remote CI run for this head.
 
+### Installed follow-up acceptance
+
+The official CLI installed the identified `7a203aa0` tarball into the existing desktop profile after normal App/Host exit, idle Resident shutdown and a fresh backup. All 34 installed files matched. The other 43 plugin dependency specifications/manifests, six profile files (except the expected package/lockfile update), original Harness session log, and complete billion-context configuration/state/logs were preserved. The separately installed Hindsight chat-recall package and its global DSH `autoInject=none` configuration were checked unchanged.
+
+Resident's `list` endpoint rejected a historical graph whose temporary workspace no longer existed. A stable read-only database/WAL snapshot showed all 15 graphs and 21 attempts terminal and no tool calls; this evidence was recorded before normal Resident shutdown. No graph or historical workspace was edited to bypass the error.
+
+After relaunch, the official App and Host were running, and the DSH-lane proxy reported HTTP 200, runtime commit `7a203aa0`, `stale:false` and zero in-flight requests. The old bili log remained an unchanged prefix; startup added no bili error or model-usage entry, and the target Harness session log remained unchanged. No real model request was submitted by the agent. A fresh read-only baseline is ready for one user-initiated no-tool reply in the original conversation. Actual provider token savings remain unmeasured until that request is observed. No temporary diagnostic plugin was installed for this follow-up.
+
 ## Installation and update ownership
 
 Use a tarball from this fork's Release, verify its SHA-256 against `SHA256SUMS`, and install it through the official DSH plugin manager using its absolute local path. Keep a backup of affected profile configuration before installation and fully quit the official app for the update. The file pin intentionally remains a manually maintained package; upstream npm releases do not replace it automatically. Future repairs are built and distributed from this fork.
