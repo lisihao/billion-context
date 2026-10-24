@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createCore, createInitialState, defaultConfig, prune, syncBlocks } from "acp-kernel";
+import { createCore, createInitialState, defaultConfig, planFoldRender, syncBlocks } from "acp-kernel";
 import { coreToResponses, responsesToCore, type ResponseInputItem, type ResponsesRequestBody } from "acp-kernel/wire";
 import { stripKernelSummaries } from "../src/server.ts";
 
@@ -40,7 +40,8 @@ for (const [label, remove] of [["unarchived", 0], ["partial-archive", 1], ["full
     remove === 0 || (remove === 1 ? i !== 3 : i !== 2 && i !== 3));
   const live = responsesToCore({ ...original, input }).msgs;
   const synced = syncBlocks(live, folded.state).state;
-  const view = prune(live, synced);
+  const selection = planFoldRender(live, synced, { measureView: (view, state) => measure(stripKernelSummaries(view, state)) });
+  const view = selection.messages;
   const render = view.find(m => m.id === `acp_summary_${block.blockId}`);
   {
     const outgoing = stripKernelSummaries(view, synced);
@@ -50,7 +51,7 @@ for (const [label, remove] of [["unarchived", 0], ["partial-archive", 1], ["full
     const row = { label, carrier: "kernel anchor; no echoed compress pair", residualTextBytes: remove === 1 ? Buffer.byteLength(residual) : null,
       summaryTextBytes: Buffer.byteLength(summary), renderedSummaryBytes: render ? Buffer.byteLength(render.text ?? "") : 0,
       inputBeforeBytes: bytesBefore, inputAfterBytes: bytesAfter, deltaBytes: bytesAfter - bytesBefore,
-      active: synced.blocks[0]!.active, summaryOccurrences: outgoing.filter(m => m.id === `acp_summary_${block.blockId}`).length };
+      active: synced.blocks[0]!.active, suppressedBlockIds: selection.suppressedBlockIds, summaryOccurrences: outgoing.filter(m => m.id === `acp_summary_${block.blockId}`).length };
     rows.push(row);
     if (label === "unarchived") assert.ok(bytesAfter < bytesBefore, "ordinary profitable fold stays effective");
     if (label === "fully-archived") {

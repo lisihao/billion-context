@@ -40,6 +40,7 @@ import {
     type OpenAITool,
 } from "acp-kernel/wire";
 import {
+    coreToResponses,
     type ResponsesRequestBody,
     type ResponseInputItem,
     type ResponsesProjection,
@@ -1550,7 +1551,7 @@ export type Prepared = {
      *  apply the SAME drop the steady path used, or the folded re-request and
      *  the next client turn render one history with two shapes (mid-history
      *  byte-prefix break on every fold). */
-    dropReasoning?: (msgs: BiliMessage[]) => BiliMessage[];
+    dropReasoning?: (msgs: BiliMessage[], silent?: boolean) => BiliMessage[];
      /** Effective compression prompts for this request (three-level cascade,
       *  defaults to the kernel's defaultPrompts). Carried so the compress loop
       *  in forward() rebuilds the SAME system prompt the request was prepared
@@ -2123,6 +2124,17 @@ function buildCarrierIndex(messages: BiliMessage[]): { callIds: Set<string>; com
     return { callIds, compressCalls, ensureRangePairs };
 }
 
+export function foldViewMeasure(protocol: WireProtocol, original: CoreMessage[], projection?: ResponsesProjection, project?: (messages: CoreMessage[], state: CompressionState) => CoreMessage[]) {
+    return (messages: CoreMessage[], renderState: CompressionState): number => {
+        const view = stripKernelSummaries((project ? project(messages, renderState) : messages) as BiliMessage[], renderState);
+        const wire = protocol === "responses"
+            ? projection ? patchResponsesInput(projection, repairResponsesAssistantOrdering(view, original)) : coreToResponses(repairResponsesAssistantOrdering(view, original))
+            : protocol === "openai" ? systemToUser(hardenOpenaiAssistantContent(coreToOpenai(view)))
+            : protocol === "anthropic" ? coreToAnthropic(view) : coreToGoogle(view);
+        return Buffer.byteLength(JSON.stringify(wire), "utf8");
+    };
+}
+
 export function stripKernelSummaries(messages: BiliMessage[], state: CompressionState): BiliMessage[] {
     const { callIds, compressCalls, ensureRangePairs } = buildCarrierIndex(messages);
     const carried = new Set<string>();
@@ -2391,7 +2403,7 @@ export function prepareCountTokens(
     try {
         const { msgs, cacheControls } = anthropicToCore(parsed);
         // Read-only preview: same policy as the google twin above.
-        const turn = core.processTurn({ messages: msgs, state: session.state, config: ccrLoopConfig(session, config), tokenCount: usageGradeInputBaseline(session), renderTags: knobRenderNone() ? "none" : "text-only", contentStore: contentStoreOf(session) });
+        const turn = core.processTurn({ messages: msgs, measureFoldView: foldViewMeasure("anthropic", msgs), state: session.state, config: ccrLoopConfig(session, config), tokenCount: usageGradeInputBaseline(session), renderTags: knobRenderNone() ? "none" : "text-only", contentStore: contentStoreOf(session) });
         const stripped = stripKernelSummaries(turn.messages as BiliMessage[], turn.state);
         const rebuiltMessages = coreToAnthropic(stripped, cacheControls);
         log("info", `[${sessionId}] count_tokens pruned: ${msgs.length} → ${stripped.length} msgs`);

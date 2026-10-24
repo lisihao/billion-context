@@ -2,6 +2,8 @@
 
 > **Session-continuity candidate:** DSH prompt relocation, tool-SDK updates and history archives with a verified retained exchange suffix preserve the continuing main identity. Retained fold coverage stays effective; fully archived coverage is not resurrected. Wire prompts, capabilities and original logs are unchanged. Validation and installation status are recorded separately in [SOLAR.md](SOLAR.md).
 
+> **Archive-benefit repair candidate:** partially archived coverage keeps its live text when an old injected summary would cost more on the same serialized request. Durable originals, refs and summaries remain available. Existing-app installation and provider-token measurements remain separate; see the [implementation and evidence](docs/solar-archive-fold-benefit.md).
+
 # billion-context
 
 <p align="center"><a href="./README.md">English</a> | <a href="./README.zh-CN.md">中文</a></p>

@@ -6,13 +6,13 @@ import type { CompressReasoningConfig } from "../reasoning-drop.js";
 import { resolveAbsorbSettings } from "../compress-settings.js";
 import { resolveCompressProtocol, type CompressSettings, type ProxyOptions } from "../config.js";
 import { currentCalibrationFactor, strippedResponseIdWarning } from "../util.js";
-import { applyReasoningDrop, diagNudge, diagTagSummary, deriveTitle, effectiveTokenCount, imageBillingFor, imageReserveFor, imageTokenCapFor, isAutoInjectedNotification, planReasoningDrop, repairResponsesAssistantOrdering, reapOrphansLogged, runNudgeDecision, stripKernelSummaries, usageGradeInputBaseline, warnResponsesReasoningPairs, type Prepared } from "../server.js";
+import { foldViewMeasure, applyReasoningDrop, diagNudge, diagTagSummary, deriveTitle, effectiveTokenCount, imageBillingFor, imageReserveFor, imageTokenCapFor, isAutoInjectedNotification, planReasoningDrop, repairResponsesAssistantOrdering, reapOrphansLogged, runNudgeDecision, stripKernelSummaries, usageGradeInputBaseline, warnResponsesReasoningPairs, type Prepared } from "../server.js";
 import { buildDecisionPrompt, buildDirectiveText, consumeFallback, ladderMode, resolveDecisionRange, stripDecisionReasoningFields, type DecideConfig } from "../nudge-decide.js";
 import { excludeDeadRefRanges } from "../acp-status.js";
 import { mergeAdjacentConfigurationUpdates, patchResponsesInputWithToolImages as patchResponsesInput, responsesToCoreWithToolImages as responsesToCore } from "../responses-tool-output.js";
 import { dropWhitespaceResponsesMessages, normalizeResponsesMessageItems, sanitizeResponsesInputIds } from "../loop/adapter-responses.js";
 import { METADATA_LAST_RESPONSES_MODE, noteCanonicalSystemFingerprint, reconcileFoldCoverage, noteSystemPromptFingerprint, resolveFoldReconcileMode } from "../fold-reconcile.js";
-import { maybeSnapshotView } from "./snapshot-render.js";
+import { maybeSnapshotView, needsLiveFoldView } from "./snapshot-render.js";
 import { nudgeSuppressed, pluginLaneDegraded } from "../session-self-heal.js";
 import { compressBreakerArmed } from "../stream.js";
 import { coveredRealHistoryIds, foldCoverage, markDirty, markNativeCompactionBoundary, reconcileNativeCompactionBoundary, REWRITE_MIN_INCOMING_TOTAL, snapshotMessages, type Session } from "../session.js";
@@ -213,7 +213,7 @@ export async function prepareResponses(
         // (fold-time ids, immune to identity re-mints); live tail keeps the
         // client's bytes. No-op when the lane is inactive/degraded; the
         // reconcile call below still observes the CLIENT view.
-        const renderMsgs = maybeSnapshotView(session, msgs, { sessionId, log });
+        let renderMsgs = maybeSnapshotView(session, msgs, { sessionId, log, isCompressTool: config.isCompressTool });
         if (opts.debug) {
             log("info", `[${sessionId}] input items: ${Array.isArray(parsed.input) ? parsed.input.map((i: ResponseInputItem) => i.type).join(",") : "(string)"}`);
         }
@@ -288,8 +288,9 @@ export async function prepareResponses(
         // #3222: BEFORE processTurn — its hide-compress-calls node removes
         // inactive call+result pairs inside, which would strip the anchors
         // this pass needs (the leak applies to the bare name too).
+        if (needsLiveFoldView(msgs, session.state, loopConfig.isCompressTool)) renderMsgs = maybeSnapshotView(session, msgs, { sessionId, log, isCompressTool: loopConfig.isCompressTool });
         reasoningPlan = planReasoningDrop(renderMsgs, reasoning, isStrictReasoningEcho(session, upstreamOrigin, modelIdOf(parsed)));
-        const turn = core.processTurn({ messages: renderMsgs, state: session.state, config: loopConfig, tokenCount, renderTags, contentStore: contentStoreOf(session) });
+        const turn = core.processTurn({ messages: renderMsgs, liveMessages: msgs, measureFoldView: foldViewMeasure("responses", msgs, projection, (view, state) => applyReasoningDrop(applyAbsorbView(view, state, loopConfig, tokenCount), reasoningPlan, () => {}, sessionId)), state: session.state, config: loopConfig, tokenCount, renderTags, contentStore: contentStoreOf(session) });
         session.state = turn.state;
         adoptContentStore(session, turn.contentStore);
         // The fold from last turn's compress has now materialized in state —
@@ -639,7 +640,7 @@ export async function prepareResponses(
         renderTags,
         resetAfterSuccess: isCompactionTrigger,
         codexForge,
-        dropReasoning: (msgs: BiliMessage[]) => applyReasoningDrop(msgs, reasoningPlan, log, sessionId),
+        dropReasoning: (msgs: BiliMessage[], silent = false) => applyReasoningDrop(msgs, reasoningPlan, silent ? () => {} : log, sessionId),
     };
 }
 
@@ -695,7 +696,7 @@ export function prepareResponsesCompact(
         // no [ACP absorb] instruction bakes into the forged history, and run
         // the absorb view so absorbed pairs stay hidden in it (wire parity).
         const compactConfig = ccrLoopConfig(session, { ...config, absorb: undefined });
-        const turn = core.processTurn({ messages: projection.msgs, state: session.state, config: compactConfig, tokenCount: usageGradeInputBaseline(session), renderTags: knobRenderNone() ? "none" : "text-only", contentStore: contentStoreOf(session) });
+        const turn = core.processTurn({ messages: projection.msgs, measureFoldView: foldViewMeasure("responses", projection.msgs, projection), state: session.state, config: compactConfig, tokenCount: usageGradeInputBaseline(session), renderTags: knobRenderNone() ? "none" : "text-only", contentStore: contentStoreOf(session) });
         session.state = turn.state;
         adoptContentStore(session, turn.contentStore);
         transformOk = true;

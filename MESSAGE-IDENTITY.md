@@ -267,9 +267,11 @@ outbound prefix FROM the server's own unified-storage transcript
   turn-over-turn. Rewound-away rows sit below the join and never render.
 - **Degrade, never guess.** Feature off, no active blocks, storage
   unreadable, or the chain cannot link — the whole turn falls back to the
-  legacy path unchanged. A client-side checkpoint of the head is adopted
-  with a one-turn lag (the view is the previous turn's observation) and can
-  never resurrect covered rows.
+  legacy path unchanged. The Solar archive-benefit repair also uses the live
+  path when verified current coverage is partially or fully archived, adopting
+  the caller's checkpoint immediately. Inactive archived originals stay absent
+  from later prefixes. Ordered raw-ledger aliases preserve complete ID-churn
+  histories without treating missing archived occurrences as surviving content.
 - What this kills structurally: the #3752 anchor-cap cliff (MAX_ANCHORS ×
   id re-mints × stateless resend) and the #3751 image `_N` family churn —
   neither can drop or duplicate folded history anymore, because the

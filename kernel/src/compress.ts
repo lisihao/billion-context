@@ -1,6 +1,12 @@
 import { assignRefs, highestUsedIndex, indexToRef } from "./refs.js";
 import { remintCoveredLiveIds } from "./instance-reid.js";
-import { prune } from "./prune.js";
+import {
+  prune,
+  partialFoldBlocks,
+  chooseFoldRendering,
+  foldRenderState,
+  type FoldViewMeasure,
+} from "./prune.js";
 import { syncBlocks } from "./sync.js";
 import { advanceSurvival, activeBlocks, blockById } from "./state.js";
 import { allocateBlockId, allocateRunId, createInitialState } from "./state.js";
@@ -88,6 +94,10 @@ export interface CompressionCore {
 }
 
 export interface ProcessTurnInput {
+  /** Pure host codec serialization cost; no durable/configuration surface. */
+  measureFoldView?: FoldViewMeasure;
+  /** Raw caller view when a host renders from canonical snapshots. */
+  liveMessages?: CoreMessage[];
   messages: CoreMessage[];
   state: CompressionState;
   config: Config;
@@ -189,7 +199,10 @@ function danglingMessageRefs(
       // message was later pruned — the same "no longer backs any message"
       // fact, so it counts as dangling (DEAD) instead of vanishing.
       const padded = indexToRef(parsed.numericId);
-      if (state.deadRefs?.includes(parsed.raw) || state.deadRefs?.includes(padded)) {
+      if (
+        state.deadRefs?.includes(parsed.raw) ||
+        state.deadRefs?.includes(padded)
+      ) {
         dangling.push(padded);
       }
       continue;
@@ -250,7 +263,6 @@ function tierActionHint(config: Config, state: CompressionState): string {
   }
   return "";
 }
-
 
 /** In-place refold (#398): same block id/coverage/tier, new summary (+topic),
  * fresh runId, restoredInline flag cleared. Summary passes the same length
@@ -382,7 +394,8 @@ export function createCore(ports: Ports = {}): CompressionCore {
     const danglingBySpec = new Map<(typeof input.ranges)[number], string[]>();
     for (const spec of input.ranges) {
       const resolution = classifications.get(spec);
-      if (resolution === undefined || resolution.status !== "consumed") continue;
+      if (resolution === undefined || resolution.status !== "consumed")
+        continue;
       const dangling = danglingMessageRefs(state, input.messages, spec);
       if (dangling.length === 0) continue;
       danglingBySpec.set(spec, dangling);
@@ -698,6 +711,35 @@ export function createCore(ports: Ports = {}): CompressionCore {
   }
 
   function processTurn(input: ProcessTurnInput): ProcessTurnResult {
+    if (!input.measureFoldView) return processTurnOnce(input);
+    const synced = syncBlocks(input.messages, input.state).state;
+    const candidates = partialFoldBlocks(
+      input.messages,
+      synced,
+      input.config.isCompressTool,
+    );
+    const measure = input.measureFoldView;
+    const selected = chooseFoldRendering(
+      candidates.map((block) => block.blockId),
+      (suppressed) => {
+        const result = processTurnOnce(input, suppressed);
+        return {
+          result,
+          renderState: foldRenderState(result.state, suppressed),
+        };
+      },
+      (view) => measure(view.result.messages, view.renderState),
+    );
+    return {
+      ...selected.view.result,
+      suppressedBlockIds: selected.suppressedBlockIds,
+    };
+  }
+
+  function processTurnOnce(
+    input: ProcessTurnInput,
+    suppressed: ReadonlySet<string> = new Set(),
+  ): ProcessTurnResult {
     const configErrors = validateConfig(input.config);
     if (configErrors.length > 0) {
       console.warn(
@@ -710,6 +752,7 @@ export function createCore(ports: Ports = {}): CompressionCore {
       tokenCount: input.tokenCount,
       countTokens,
       contentStore,
+      suppressedBlockIds: suppressed,
     };
     const initial: NodeIO = {
       messages: input.messages,
@@ -724,7 +767,13 @@ export function createCore(ports: Ports = {}): CompressionCore {
     // #462: snapshot the raw inbound ids BEFORE any node runs — reconcile-
     // live-ids consumes the PREVIOUS pass's snapshot (echo continuity), and the
     // returned state carries THIS pass's snapshot for the next one.
-    const inboundIds = input.messages.map((m) => m.id);
+    const inboundIds = input.liveMessages
+      ? [
+          ...new Set(
+            [...input.messages, ...input.liveMessages].map((m) => m.id),
+          ),
+        ]
+      : input.messages.map((m) => m.id);
     const result = runPipeline(nodes, initial, ctx);
     // #2362: lift dead-ref tombstones whose messages came back into the resent
     // view (tombstone-with-clear — types.CompressionState.deadRefs).
@@ -742,6 +791,7 @@ export function createCore(ports: Ports = {}): CompressionCore {
     return {
       messages: result.messages,
       state,
+      suppressedBlockIds: result.effects.suppressedBlockIds,
       nudge: result.effects.nudge,
       terminalEscape: result.effects.terminalEscape,
       truncationSkipped: result.effects.truncationSkipped,
@@ -912,14 +962,22 @@ const syncBlocksNode: PipelineNode = {
 const pruneNode: PipelineNode = {
   name: "prune",
   run(io, ctx) {
+    const renderState = foldRenderState(
+      io.state,
+      ctx.suppressedBlockIds ?? new Set(),
+    );
     return {
       ...io,
-      messages: prune(io.messages, io.state, {
+      messages: prune(io.messages, renderState, {
         isCompressTool: ctx.config.isCompressTool,
       }),
       // #2663: keep the pre-prune resent array reachable so recommend can
       // judge foldability on the same input class applyCompression sees.
-      effects: { ...io.effects, originalMessages: io.messages },
+      effects: {
+        ...io.effects,
+        originalMessages: io.messages,
+        foldRenderState: renderState,
+      },
     };
   },
 };
@@ -992,7 +1050,7 @@ const hideCompressCallsNode: PipelineNode = {
   name: "hide-compress-calls",
   run(io, ctx) {
     const hidden = hideConsumedCompressCalls(
-      io.state,
+      io.effects.foldRenderState ?? io.state,
       io.messages,
       ctx.config.isCompressTool,
     );
@@ -1695,7 +1753,9 @@ function decideNudge(input: NudgeInput): NudgeDecision {
     const growthShort = growthSinceReference < growthFloor;
     const parts: string[] = [];
     if (pendingShort)
-      parts.push(`max compressible ${maxPending} < threshold ${minTierThreshold}`);
+      parts.push(
+        `max compressible ${maxPending} < threshold ${minTierThreshold}`,
+      );
     if (growthShort)
       parts.push(`growth ${growthSinceReference} < floor ${growthFloor}`);
     if (parts.length === 0)

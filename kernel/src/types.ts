@@ -581,6 +581,8 @@ export interface ApplyCompressionResult {
 }
 
 export interface ProcessTurnResult {
+  /** Request-scoped; never persisted into CompressionState. */
+  suppressedBlockIds?: string[];
   messages: CoreMessage[];
   state: CompressionState;
   nudge?: NudgeDecision;

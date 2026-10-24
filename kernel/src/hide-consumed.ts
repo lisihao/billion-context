@@ -175,6 +175,36 @@ function compactCompressText(text: string | undefined): string | null {
   return changed ? prefix + out : null;
 }
 
+export function blockHasCarrier(
+  block: import("./types.js").CompressionBlock,
+  messages: CoreMessage[],
+  isCompressTool: (name: string) => boolean = (name) =>
+    name === COMPRESS_TOOL_NAME,
+): boolean {
+  return messages.some((message) => {
+    if (
+      message.summaryOfBlockId === block.blockId ||
+      (message.id === `acp_summary_${block.blockId}` &&
+        message.role === "system")
+    )
+      return true;
+    if (
+      message.contentType !== "tool-call" ||
+      !message.toolName ||
+      !isCompressTool(message.toolName)
+    )
+      return false;
+    if (block.compressCallId && message.toolCallId === block.compressCallId)
+      return true;
+    return (
+      !!block.compressCallId?.startsWith("plugin_") &&
+      !!block.startRef &&
+      !!block.endRef &&
+      quotedRangeKeys(message.text).has(rangeKey(block.startRef, block.endRef))
+    );
+  });
+}
+
 export function hideConsumedCompressCalls(
   state: CompressionState,
   messages: CoreMessage[],

@@ -1,106 +1,74 @@
-# Archive fold benefit: reproduction and kernel approval boundary
+# Archive fold benefit repair
 
-Status: **reproduced; behavioral repair pending kernel owner approval**. This document is a reviewable implementation proposal, not a claim that the defect is fixed or that an installation candidate is ready.
+Status: source repair and local no-model verification. Existing-app installation and real provider measurements are separate acceptance steps. The former `ed7d483c` package was reproduction-only and must not be installed as this repair.
 
-## Scope and acceptance
+## Approval and ownership
 
-Preserve the session-continuity repair at `7f924d810d5bbebe71a4081dd4ea2efa798090ca` on `codex/bili-session-continuity`. This task branches from that exact head as `codex/bili-archive-fold-benefit`; it does not rebase onto the integrated project's master or alter PR #1.
+The owner approved this narrow kernel change in the original chat `01a151b7-fa32-78b1-8f0b-be10f671f8e4`; the approval and exact original wording are recorded in [PR #2](https://github.com/lisihao/billion-context/pull/2#issuecomment-6378648976). The owner explicitly allowed that PR to replace the dedicated issue because this fork's Issues endpoint returns HTTP 410. This is not approval for arbitrary kernel refactoring, a product release, merge, existing-profile installation, real model calls or automation. Human review remains required.
 
-Observable acceptance: after the caller archives most of a fold's coverage, the current request must not grow merely because a stale full summary replaces its small live remainder. Profitable folds must still work. Entirely archived content must stay absent. Blocks, summaries, refs, original-content stores and audit logs must remain available under their existing contracts. Use actual codec serialization on the same request for byte measurements; do not infer provider tokens from characters or compare different turns as a causal experiment.
+`kernel-change: current-request fold rendering eligibility; existing host ports could not jointly control source hiding and summary carriers while preserving durable state.`
 
-Current affected paths: `scripts/solar-archive-fold-benefit-probe.ts` and this document only. No kernel, host behavior, product version, configuration, workflow, installed profile or application changes are included.
+The parent remains `7f924d810d5bbebe71a4081dd4ea2efa798090ca` on `codex/bili-session-continuity`. The earlier continuity repair and PR #1 are retained. The product version remains `0.1.202-solar.1`; only the required internal kernel version moves from `0.0.136` to `0.0.137`.
 
-Expected implementation scope, only after approval: kernel render decision and processTurn/types, possibly sync/hide-consumed; affected host codec/prepare and snapshot-render call sites; kernel version discipline; kernel and host regressions. The exact API and algorithm are not frozen by this proposal.
+## Root cause and observable boundary
 
-## Native execution and baseline
+`syncBlocks()` correctly keeps a block alive while any raw coverage survives. Previously, `prune()` always hid that surviving coverage and rendered the entire old summary, even if the summary was now larger. Durable existence and this request's rendering benefit were conflated. Changing active/expanded in the host would either be undone by sync or falsely represent explicit decompression; removing a summary after pruning loses the already-hidden source.
 
-The command environment identified itself as `ComputerName=Macmini`, hostname `Mac`, Darwin arm64. Runtime: Node `v26.7.0`. The isolated clone is under `Projects`, separate from the DSH checkout and its pre-existing work. Dependency installation used the committed lockfile with lifecycle scripts disabled; no provider credentials or private prompts were copied.
+Acceptance is a same-request, same-codec comparison: partially archived raw coverage without a caller-carried summary must not pay for an unhelpful old summary. Full profitable folds continue working; fully archived raw content and summaries stay absent. Refs, original stores, durable blocks, summary text and audit logs remain intact. Nothing in this repair measures or claims provider token savings.
 
-Code-as-Harness was read. The requested `dsh-plugin-audit/SKILL.md` was not found in the installed skill catalogs, plugin cache or migration kit; its path/content was requested. No audit under that absent skill is claimed.
+## Implementation
 
-## Synthetic reproduction
+- A pure `measureFoldView` port on `ProcessTurnInput` supplies the host codec's serialized UTF-8 byte cost. It adds no configuration field or environment variable and changes no persistence schema.
+- The kernel identifies only active blocks with a nonempty strict subset of their raw coverage. Expanded/consumed blocks and recognized existing summary/checkpoint/compress-call carriers are excluded. An already-pruned caller view must keep its useful carrier; that summary already belongs to the incoming request, rather than being newly inserted by the kernel.
+- Candidate partial blocks start unfolded while unaffected blocks retain normal rendering. Each candidate is enabled only if the complete candidate pipeline yields a strict measured reduction. The chosen result is reused; speculative state/content-store results are discarded. Selection is deterministic in block order and is not an optimal packing claim.
+- Comparison runs the complete canonical kernel pipeline, including CCR, filters, orphan handling, absorb/crush/truncation and ref rendering. This matters: a raw 16KB tool result may become a short CCR placeholder on the unfolded path. Measuring just its pre-CCR text would incorrectly accept a larger summary. Steady host callbacks also apply their absorb/reasoning projection before the actual codec.
+- `prune` and consumed-call handling share an ephemeral render state. The returned durable state retains activity, originals and refs; recommendation/apply still use durable coverage. `suppressedBlockIds` is a request result, not stored state. Standalone hosts omitting the new port retain their previous behavior.
+- Responses, OpenAI, Anthropic and Google prepare paths, relay refresh and count/compact previews receive the codec port. System/tools and provider/model/reasoning choices are unchanged.
 
-Run from the repository root after `npm ci --ignore-scripts` and the normal dependency build/typecheck:
+## Snapshot behavior
+
+Snapshot rendering retains its rollout setting and normal identity-stable prefix behavior. When verified live fold coverage has actually been archived, that request uses the existing named live-view fallback. The caller's checkpoint is accepted immediately; a previous server summary must not restore material the caller archived. Inactive archived coverage is excluded from later canonical prefixes.
+
+Identity churn remains supported. Aliases come from the existing ordered snapshot chain and, when needed, the existing raw ledger. Live occurrence slots are consumed in order and cannot be reused to disguise a deleted duplicate. Historical inactive blocks do not force permanent fallback. Raw and canonical-rendered ids are both recorded via the explicit `liveMessages` bookkeeping port, so a raw remainder omitted by an earlier snapshot is not incorrectly reminted as a new message next turn.
+
+This updates the old snapshot checkpoint rule that intentionally ignored the caller's checkpoint and kept the old server summary. That behavior conflicts with this task's explicit no-resurrection requirement. Its regression now checks immediate checkpoint retention and continued absence of archived originals and summaries over three turns; the existing complete ID-churn prefix assertions remain strict.
+
+## Synthetic failure and passing controls
+
+The fixture contains no private prompts, session logs or provider credentials. It creates a real compression block with a synthetic plugin-call id and no echoed compress pair, then uses the actual Responses codec. The residual is 251 UTF-8 bytes; the summary is 2207 bytes, 2278 with its wrapper.
 
 ```sh
-node --import tsx scripts/solar-archive-fold-benefit-probe.ts
 node --import tsx scripts/solar-archive-fold-benefit-probe.ts --assert-no-expansion
 ```
 
-The first command exits 0 after checking fixture construction, the profitable/full-archive controls, unchanged existing ref maps, preserved summary lookup and source-state immutability. Its success means the observation completed, **not** that the repair passed. The second adds the intended acceptance assertion and currently exits 1.
+Before this repair the acceptance assertion exited 1. After the repair it exits 0. The observation command's previous exit 0 meant the reproduction ran; it never meant the defect was fixed.
 
-The fixture is wholly synthetic. It creates a real block through `createCore().applyCompression()`, records a synthetic plugin compress-call id, uses the Responses codec, then `syncBlocks()` and `prune()` with the existing host `stripKernelSummaries()` behavior when no echoed compress pair exists. The 251-byte residual and 2207-byte summary mirror only the reported payload lengths; all content is invented. The wrapper produces 2278 UTF-8 bytes. The metric is `Buffer.byteLength(JSON.stringify(coreToResponses(view)), "utf8")`, the serialized **input array**, excluding unchanged top-level instructions/tools.
+| Same synthetic request | Unfolded input bytes | Old rendering | Repaired rendering |
+| --- | ---: | ---: | ---: |
+| Full original coverage | 16840 | 2767 | 2767 |
+| Partial archive, 251-byte remainder | 720 | 2767 | 720 |
+| Fully archived coverage | 437 | 437 | 437 |
 
-| Same-request control | Unfolded input bytes | Current folded input bytes | Delta | Block active |
-| --- | ---: | ---: | ---: | --- |
-| Full original coverage | 16840 | 2767 | -14073 | yes |
-| Partial archive, 251-byte live user | 720 | 2767 | +2047 | yes |
-| Fully archived coverage | 437 | 437 | 0 | no |
+The metric is `Buffer.byteLength(JSON.stringify(coreToResponses(view)), "utf8")`: serialized input-array bytes. It excludes unchanged top-level fields. The private production observation (+2004 bytes) was not replayed or copied here; the independent synthetic old delta is +2047 bytes. Neither is a token measurement.
 
-These are synthetic measurements, not a replay of the private production request. In particular, +2047 is not the reported private +2004, and neither is a measured token delta. The probe exercises the shared kernel-anchor path, not full plugin/proxy transport or echoed tool carriers. Both complete transport modes remain required after implementation.
+Real source-mode loopback captures, including unchanged large system text and tool declarations:
 
-## Producer and correct decision boundary
+| Lane | Initial full input | Profitable full fold | Partial archive | Same-route unfolded partial control |
+| --- | ---: | ---: | ---: | ---: |
+| DSH plugin / Responses | 70140 | 55934 | 53984 | 53984 |
+| Proxy / Responses, snapshot off | 81204 | 66998 | 65048 | 65048 |
+| Proxy / Responses, snapshot on | 81204 | 67046 | 65048 | 65048 |
 
-`kernel/src/sync.ts` sets a non-consumed, non-expanded block active when any effective covered id (or its summary representation) is present. It tracks whether coverage survives, not whether replacing that coverage is still useful. `kernel/src/prune.ts` then hides live coverage and inserts the entire old summary. It also pins the opening user message and corrects tool/reasoning pairing, so merely summing covered text lengths is not the actual net change.
+These are input-array bytes, not billed tokens. Proxy fixtures create real blocks through the management endpoint, then remove only its setup-time MCP UI attribution marker so subsequent traffic exercises genuine proxy mode. Each unfolded control uses a temporary cloned expanded state, with the original saved state restored immediately. The candidate's durable active/coverage/refs/originals remain checked separately. The packed harness uses a separately seeded real raw control session.
 
-The block's durable existence/activity and its eligibility to render on this request are distinct facts. The latter is currently missing. The repair must decide coverage hiding and summary-carrier rendering together; removing a summary after hiding its source loses context.
+## Verification and boundaries
 
-### Why the current host interfaces are insufficient
+Checks and exact final source/package fingerprints are recorded in the delivery receipt, alongside command exit codes and SHA256. The test set covers small and large residuals, full coverage, full archival, first-user pins, profitable siblings, consumed ancestors, unchanged refs/search/decompress lookup, synthetic/ordinary/multi-range carriers, UTF-8/JSON escaping, invalid meter errors, CCR/ref-render boundaries, repeated archives and persistence/restart. The host matrix verifies original content stores and complete system/tools on the actual captured requests.
 
-- `ProcessTurnInput` has no per-block render-eligibility port. `processTurn()` hardcodes canonical nodes including sync, prune and consumed-call handling.
-- `PruneOptions` only supplies summary injection, head anchoring and compress-tool classification; it cannot choose a coherent subset while retaining durable state.
-- Setting `active=false` in host state is undone by the next sync. Setting `expanded=true` impersonates explicit user decompression and changes future compression behavior.
-- Filtering outgoing `acp_summary_*` alone is too late: covered originals have already disappeared. Plugin mode can carry its summary in a compress call instead, so the filter also misses that route.
-- Exported `defaultNodes()`/`runPipeline()` are not a processTurn node override. Replacing the orchestration would duplicate its inbound-id, dead-ref and content-store bookkeeping and take ownership of preserving canonical ordering.
-- `src/server/snapshot-render.ts` can remove covered canonical rows and synthesize anchors before processTurn. Counting only that already-rendered input mistakes absent raw content for zero eligible coverage. A correct policy must consult the right current live view without restoring archived transcript rows.
+An independent reviewer found the incomplete downstream meter and snapshot identity/bookkeeping problems during development; those were corrected before the stable gate. Passing earlier evidence is reused only where relevant inputs and behavior remain unchanged. No unrelated full local bili suite substitutes for the repository's required remote full-suite verdict.
 
-An independent read-only reviewer confirmed these boundaries. No kernel edit was made to bypass them.
+The supplied `dsh-plugin-audit` checker was saved only in a temporary directory. Its verified SHA256 is `64c3b1b75e00f147fcc8ab9483ce105ee671e030271a751f7e71bce4d32dd852`; read-only audit result: 6 ok, 0 warn, 0 error. This structural check does not prove installed activation.
 
-## Proposed implementation contract
+No real model calls, DSH Send, real business tools, existing App/profile modification, merge, tag, release, npm publication, market publication, global skill installation or recurring automation is part of this task. Official CLI acceptance, when available, uses only the fixed published `@deepseek-ai/dsh@0.2.1-rc.2` inside a disposable npm project/home. Its actual run/not-run result and the packed plain-Node fake-upstream results are stated separately in the final receipt. Full GUI/provider acceptance remains unrun by design.
 
-Add an explicit request-scoped render decision at the shared compression decision boundary. The durable block, original store, ref map, summary and logs remain intact. The host supplies an exact common serialization measure for its codec; the kernel must apply the chosen rendering coherently, including coverage and compress-call carrier handling. The plan must explicitly handle snapshot rendering and the apply/original view rather than counting already-pruned output.
-
-The implementation must establish handling of shared/multi-range tool carriers, consumed ancestors, overlapping coverage and first-user pins before selecting its algorithm. A simple summary-text cutoff, per-character token estimate, global folding disable, state clearing, re-summarization/model call or outbound payload patch is not this repair.
-
-A selected candidate should be checked against the same request's unfolded counterfactual and all affected carrier effects. No token-saving claim is justified without actual provider measurement, which is outside this task's permission.
-
-## Required regressions after approval
-
-1. Before/after failure/pass for the 251/2278-byte residual case, using the common serialization metric.
-2. Full and partial large coverage retain profitable folding; a positive sibling is not suppressed by a losing block.
-3. Fully archived blocks, consumed ancestors, old originals and old summaries never revive.
-4. Opening-user pins, UTF-8, JSON escaping and tool/reasoning pairing use actual render behavior.
-5. Plugin compress pair present and absent, multi-range calls and dialect names; proxy anchor carriers.
-6. Consecutive archives and actual persistence/restart give consistent results, with unchanged ref identities and allocation discipline.
-7. Originals and summary audit data survive; existing decompress/search behavior remains available. No archived raw text is reinjected into the main request.
-8. Responses and OpenAI transport paths, including snapshot render off/on, preserve system/tools and all unchanged request content.
-9. Kernel source tests plus affected bili transport tests; built plain-Node package verification and disposable official-CLI profile boot, without real provider calls or business-tool execution.
-
-## Evidence and uncovered scope
-
-Completed at the fixed baseline:
-
-- `npm ci --ignore-scripts --no-audit --no-fund`: exit 0.
-- `npm run typecheck`: exit 0, including normal kernel/pi dependency builds.
-- Synthetic observation: exit 0; no-expansion acceptance assertion: exit 1, expected unresolved defect.
-- `node --import tsx --test tests/solar-dsh-archive-folds.test.ts tests/solar-dsh-fold-continuity.test.ts`: exit 0, 2 passed. These are existing continuity controls with loopback fake upstreams, not evidence of a benefit repair.
-- `npm run build`: exit 0; import-annotation and external-zod checks passed.
-- Independent read-only decision-boundary review completed.
-
-Not run/pending: repaired behavior (not implemented), kernel new-policy suite, full new-policy plugin/proxy carrier matrix, official-CLI disposable profile boot, existing-app installation, real provider calls and token/cache measurements. The last two are explicitly outside authorization. `command -v dsh` and the specified `/Applications/DeepSeek Harness.app` lookup did not locate an official CLI/App on this machine; no installed profile was changed.
-
-The existing kernel unit suite is unchanged. Remote CI must be read for the exact pushed head; prior absence is not a green verdict. No workflow entry, schedule, release or repository setting is added here.
-
-## Approval blockers
-
-The fork's [AGENTS.md](../AGENTS.md), Kernel Boundary rule 1, states: **"needs owner approval BEFORE implementation, via a dedicated issue stating why the host side cannot solve the problem."** The originating task explicitly withholds kernel implementation until that dedicated approval. The rationale above makes the request reviewable; it does not self-authorize it.
-
-A dedicated issue creation request to `lisihao/billion-context` returned HTTP 410: **Issues has been disabled in this repository.** No issue was created. The agent did not enable Issues or post to the integrated project's repository. This draft PR records the issue requirement as blocked, and asks the owner how to satisfy it alongside the kernel approval. No approval is assumed from a timeout or from creating this draft.
-
-Required declaration for any later kernel implementation PR:
-
-```text
-kernel-change: add current-request fold render eligibility; existing host ports cannot jointly control coverage hiding and all summary carriers while preserving durable state
-```
-
-This evidence package is not suitable for installing as a fix. Resume the bounded implementation only after the dedicated approval/issue boundary is resolved. Preserve PR #1, the fixed baseline, and accepted continuity evidence.
+Remote CI must be checked for the exact pushed head. An empty workflow/check result is unrun, not green. No workflow registration, trigger or schedule was added. This repair does not guarantee an optimal fold selection or a universal provider-token minimum; it uses the tested codec byte criterion and preserves the capability and data contracts above.
