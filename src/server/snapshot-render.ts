@@ -1,3 +1,5 @@
+import { partialFoldBlocks, syncBlocks, blockHasCarrier, baseIdOf } from "acp-kernel";
+import type { CompressionState, CoreMessage } from "acp-kernel";
 import type { BiliMessage } from "acp-kernel/wire";
 import { getStore } from "../persist.js";
 import { featureEnabled } from "../rollout.js";
@@ -25,10 +27,9 @@ import type { Session } from "../session.js";
  *     the transcript view (id fast path, then the #3658 canonical identity
  *     signature — role|contentType|toolName|text — so an upgrade turn where
  *     every id is re-minted still chains by content).
- *   - client head edits (checkpoints, deletions, compactions of the head)
- *     never resurrect or duplicate rows: the prefix renders what the server
- *     has, the chain's first unmatched client message starts the tail, and
- *     anything below the chain is dropped (server-authoritative head).
+ *   - archived fold coverage uses the live client view for this request;
+ *     old transcript rows never restore missing covered content. Inactive
+ *     archived rows also stay out of later snapshot prefixes.
  *   - rewinds truncate the transcript view at the chain join: rows the
  *     client no longer vouches for (beyond the last chained row) do not
  *     render — the tail is client-authoritative past the join point.
@@ -67,6 +68,7 @@ interface ViewRow {
 interface SnapshotRenderDeps {
     sessionId: string;
     log?: (level: string, msg: string) => void;
+    isCompressTool?: (name: string) => boolean;
 }
 
 /** One-time + per-turn observability: the latch counts active renders; the
@@ -102,6 +104,15 @@ function parseRow(content: string, seq: number): BiliMessage | null {
  * are two observability fields on `session.metadata` (the render latch and the
  * last post-arm degrade reason) — neither touches outbound bytes.
  */
+export function needsLiveFoldView(messages: CoreMessage[], state: CompressionState, isCompressTool?: (name: string) => boolean): boolean {
+    if (partialFoldBlocks(messages, state, isCompressTool).length > 0) return true;
+    const active = new Map(state.blocks.filter(block => block.active).map(block => [block.blockId, block]));
+    return syncBlocks(messages, state).deactivated.some(id => {
+        const block = active.get(id);
+        return block !== undefined && !blockHasCarrier(block, messages, isCompressTool);
+    });
+}
+
 export function maybeSnapshotView(session: Session, clientMsgs: BiliMessage[], deps: SnapshotRenderDeps): BiliMessage[] {
     if (!featureEnabled("snapshotRender")) return clientMsgs;
     const activeBlocks = session.state.blocks.filter((b) => b.active);
@@ -132,6 +143,8 @@ export function maybeSnapshotView(session: Session, clientMsgs: BiliMessage[], d
     // Backward chain: from the client's end, match view rows (id fast path,
     // then identity signature). The chain must be contiguous; the first
     // unmatched client message bounds the client tail.
+    const matchedRows: ViewRow[] = [];
+    const matchedClientSlots = new Set<number>();
     let joinRow = -1; // view index of the TOPMOST matched row — the join point
     let clientJoin = clientMsgs.length; // first client index of the tail
     {
@@ -176,10 +189,49 @@ export function maybeSnapshotView(session: Session, clientMsgs: BiliMessage[], d
                 clientJoin = k + 1; // tail = everything above the topmost matched message
                 joinRow = hit; // the join point: the prefix renders every row up to and including it
             }
+            matchedRows.push(rows[hit]);
+            matchedClientSlots.add(k);
             cursor = hit;
         }
         if (!started) return legacyFor(session, deps, clientMsgs, "chain-not-started"); // nothing chains: epoch-like rewrite, legacy
     }
+    // Canonical aliases come only from the ordered occurrence-aware chain,
+    // never from a set of equal text that could mask an archived duplicate.
+    const coverageView = [...clientMsgs, ...matchedRows.map(row => row.msg)];
+    if (needsLiveFoldView(coverageView, session.state, deps.isCompressTool)) {
+        // Tail views may already omit folded originals. Resolve only known
+        // covered ids against the raw ledger, matching live occurrences in
+        // order; an archived duplicate cannot borrow the same live slot twice.
+        const wanted = new Set(activeBlocks.flatMap(block => block.effectiveMessageIds.map(baseIdOf)));
+        const originals = (store.unifiedRawMessages(session.id) ?? []).map(row => parseRow(row.content, row.seq))
+            .filter((message): message is BiliMessage => message !== null && wanted.has(baseIdOf(message.id)));
+        const slots = new Map<string, { indices: number[]; at: number }>();
+        clientMsgs.forEach((message, index) => {
+            if (matchedClientSlots.has(index) || wanted.has(baseIdOf(message.id))) return;
+            const sig = identitySig(message);
+            const entry = slots.get(sig) ?? { indices: [], at: 0 };
+            entry.indices.push(index);
+            slots.set(sig, entry);
+        });
+        let cursor = 0;
+        const matchedIds = new Set(coverageView.map(message => baseIdOf(message.id)).filter(id => wanted.has(id)));
+        for (const message of originals) {
+            const id = baseIdOf(message.id);
+            if (matchedIds.has(id)) continue;
+            const entry = slots.get(identitySig(message));
+            if (!entry) continue;
+            while (entry.at < entry.indices.length && entry.indices[entry.at] < cursor) entry.at++;
+            if (entry.at === entry.indices.length) continue;
+            cursor = entry.indices[entry.at++] + 1;
+            matchedIds.add(id);
+            coverageView.push(message);
+        }
+    }
+    if (needsLiveFoldView(coverageView, session.state, deps.isCompressTool))
+        return legacyFor(session, deps, clientMsgs, "archive-live-coverage");
+    const liveBases = new Set(coverageView.map(message => baseIdOf(message.id)));
+    const archivedInactive = new Set(session.state.blocks.filter(block => !block.active)
+        .flatMap(block => block.effectiveMessageIds.map(baseIdOf)).filter(id => !liveBases.has(id)));
     const d = joinRow + 1; // prefix = rows[0..d) — everything up to the join; rows beyond (rewound-away tails) never render
 
     // Anchor synthesis: one anchor per active block, positioned past the
@@ -234,7 +286,7 @@ export function maybeSnapshotView(session: Session, clientMsgs: BiliMessage[], d
     let ai = 0;
     for (let i = 0; i < d; i++) {
         while (ai < anchors.length && anchors[ai].at === i) merged.push(anchors[ai++].msg);
-        if (coveredSeqUnion.has(rows[i].seq)) continue;
+        if (coveredSeqUnion.has(rows[i].seq) || archivedInactive.has(baseIdOf(rows[i].msg.id))) continue;
         merged.push(rows[i].msg);
     }
     while (ai < anchors.length) merged.push(anchors[ai++].msg);

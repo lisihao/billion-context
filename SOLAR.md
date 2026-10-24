@@ -23,6 +23,10 @@ Validation uses synthetic Responses requests and a local fake upstream, includin
 
 The reload check covers a recognized DSH title sidecar arriving before the continuing main request. It is not a guarantee for an unrecognized auxiliary persona arriving first after restart: old persisted affinity hashes cannot safely be recomputed without the original history. Such a mismatch remains isolated rather than guessing which branch owns the folds. The fork has Issues disabled; the reproduction and acceptance record are carried in the repair PR instead of changing repository settings.
 
+## Archive-benefit repair candidate
+
+PR #2 adds a request-scoped kernel rendering decision for partially archived raw coverage without an existing caller-carried summary. The host supplies actual codec byte measurements over the complete kernel result; unhelpful summaries stay out of that request while durable activity, refs, original stores and audit summaries remain intact. Snapshot identity churn remains supported and archived content is not restored. Only the internal kernel version changes, to `0.0.137`; this is not a product release. [Detailed evidence and limits](docs/solar-archive-fold-benefit.md) distinguish source/packed validation from the separately authorized installed-app acceptance.
+
 ## Session-continuity candidate acceptance (2026-10-23)
 
 The installed candidate was built from `c56b50f122f75372e3433cb4c04e14d808cb477b` as `billion-context@0.1.202-solar.1`; no version release or tag was created. Its packed SHA-256 is `f61ad0165bee6f86a6b8ecbcad671e8d743b0978c024bf9702585107ca0862d9`. The later CI-only branch commit does not change these runtime bytes.

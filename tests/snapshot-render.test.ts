@@ -9,7 +9,7 @@
 //     identical content — the #3752/#3658 regression class): the outbound
 //     prefix stays byte-identical, the block survives, no destroy verdict;
 //  3. client-side deletion/checkpointing of the covered region is ignored
-//     (server-authoritative prefix), the checkpoint itself rides the tail;
+//     without reviving archived content; the client checkpoint stays visible;
 //  4. rewind: dropped tail messages do not come back;
 //  5. protocol switch mid-session: same session, anchors render, stable;
 //  6. rollout off (default): the legacy path keeps today's behavior — the
@@ -79,7 +79,7 @@ type Harness = {
     anthropicUrl: string;
     store: { unifiedTailSeqs(sessionId: string): number[] | null } | null;
     googleUrl: string;
-    sessionOf: (label: string) => { meta: { label: string }; state: { blocks: { id: string; active: boolean }[] }; metadata: Record<string, unknown> } | undefined;
+    sessionOf: (label: string) => { meta: { label: string }; state: { blocks: { id: string; active: boolean; summary: string }[] }; metadata: Record<string, unknown> } | undefined;
 };
 
 async function withHarness(fn: (h: Harness) => Promise<void>, storeEnabled: boolean): Promise<void> {
@@ -354,46 +354,32 @@ test("D on: identity-seed upgrade — outbound prefix byte-identical, block aliv
     }, true);
 });
 
-test("D on: client drops/checkpoints the covered region — server-authoritative prefix, client checkpoint ignored", async () => {
+test("D on: fully archived coverage keeps the client checkpoint and never revives old summaries", async () => {
     process.env.BILI_ROLLOUT_SNAPSHOT_RENDER = "100";
     await withHarness(async (h) => {
         const history = conversation();
         const r1 = await turn(h, h.openaiUrl, "s-drop", history, history);
         assert.equal(r1.status, 200, r1.body);
-        assert.ok(h.sessionOf("s-drop")!.state.blocks.some((b) => b.active), "block armed");
-        // dsh-style checkpoint: first 10 messages replaced by one summary message
+        const original = h.sessionOf("s-drop")!;
+        assert.ok(original.state.blocks.some((block) => block.active), "block armed");
+        const summaries = original.state.blocks.map(block => block.summary);
         const dropped = [
             { role: "user", content: "Earlier context was summarized by the client checkpoint: setup work happened." },
             ...history.slice(10),
-            { role: "user", content: "Continuing after checkpoint. " + "KEEP_A_".repeat(80) },
         ];
-        const r2 = await turn(h, h.openaiUrl, "s-drop", dropped, null);
-        const out2 = sent(h.bodies, r2.idx);
-        const joined2 = out2.map(textOf).join("\n");
-        assert.ok(joined2.includes(SUMMARY), "anchor rendered from server state");
-        assert.ok(!joined2.includes("WORK_1_content_"), "client's idea of the covered region does not resurrect rows");
-        assert.ok(joined2.includes("WORK_10_content_"), "uncovered snapshot rows render");
-        // Server-authoritative head (#3756 doctrine): the client's checkpoint
-        // replacement sits BELOW the chain join, so it never renders — the
-        // covered region belongs to the server's own summary (anchor), and
-        // the uncovered head renders from the transcript rows it replaced.
-        assert.ok(!joined2.includes("client checkpoint"), "client-side checkpoint of the head is ignored (server-authoritative)");
-        assert.equal(anchorCount(joined2), 1, "exactly one anchor copy");
-        // next turn: the transcript view has adopted the client's checkpoint
-        // shape (one-turn adoption lag, documented in the engine header);
-        // the anchor still renders from block state, covered rows stay gone.
-        const r3 = await turn(h, h.openaiUrl, "s-drop", [...dropped, { role: "user", content: "And one more. " + "KEEP_B_".repeat(80) }], null);
-        assert.equal(r3.status, 200, r3.body);
-        const out3 = sent(h.bodies, r3.idx);
-        const joined3 = out3.map(textOf).join("\n");
-        assert.ok(joined3.includes(SUMMARY), "anchor still rendered after checkpoint adoption");
-        assert.ok(!joined3.includes("WORK_1_content_"), "covered rows stay suppressed after adoption");
-        // steady after the edit: the next turn is byte-stable on the prefix
-        const r4 = await turn(h, h.openaiUrl, "s-drop", [...dropped, { role: "user", content: "And one more. " + "KEEP_B_".repeat(80) }, { role: "user", content: "Final follow. " + "KEEP_C_".repeat(80) }], null);
-        assert.equal(r4.status, 200, r4.body);
-        const out4 = sent(h.bodies, r4.idx);
-        assertPrefixStable(out4, out3, 1, "client-checkpoint");
-        assertDActive(h, "s-drop", 1, "client-checkpoint");
+        for (const tail of ["KEEP_A_", "KEEP_B_", "KEEP_C_"]) {
+            dropped.push({ role: "user", content: "Continuing after checkpoint. " + tail.repeat(80) });
+            const response = await turn(h, h.openaiUrl, "s-drop", dropped, null);
+            assert.equal(response.status, 200, response.body);
+            const joined = sent(h.bodies, response.idx).map(textOf).join("\n");
+            assert.ok(joined.includes("client checkpoint"), "the caller's checkpoint is retained immediately");
+            assert.ok(joined.includes("WORK_10_content_"), "live uncovered content remains");
+            assert.ok(!joined.includes(SUMMARY), "fully archived summary never revives");
+            assert.ok(!joined.includes("WORK_0_content_") && !joined.includes("WORK_1_content_"), "archived raw content never revives");
+            const state = h.sessionOf("s-drop")!.state;
+            assert.ok(state.blocks.every(block => !block.active), "fully archived coverage stays inactive");
+            assert.deepEqual(state.blocks.map(block => block.summary), summaries, "audit summaries remain intact");
+        }
     }, true);
 });
 

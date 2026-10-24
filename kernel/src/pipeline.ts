@@ -1,6 +1,7 @@
 import type { CompressionState, CoreMessage, NudgeDecision } from "./types.js";
 
 export interface PipelineContext {
+  readonly suppressedBlockIds?: ReadonlySet<string>;
   readonly config: import("./types.js").Config;
   readonly tokenCount: number;
   readonly countTokens: (text: string) => number;
@@ -10,6 +11,8 @@ export interface PipelineContext {
 }
 
 export interface NodeEffects {
+  foldRenderState?: CompressionState;
+  suppressedBlockIds?: string[];
   nudge?: NudgeDecision;
   recommendation?: import("./types.js").Recommendation;
   truncatedCount?: number;

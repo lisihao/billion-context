@@ -58,7 +58,7 @@ import { buildForwardHeaders, connectionNamedHeaders, RESPONSE_ONLY_STRIP_HEADER
 import { bodyDumpEnabled, logDumpFailure } from "./observability.js";
 import { effectiveAbsorbBlock } from "./prepare-responses.js";
 import { awaitDrain, bufferToStream, dumpStreamToFile, pipeThrough, readStreamToBuffer } from "./stream-io.js";
-import { buildForwardTarget, outboundPayloadBreakdown, registerRequestAbort, beginStreamKeepalive, effectiveTokenCount, googlePathKind, imageBillingFor, imageTokenCapFor, inboundResignCredential, outboundContextEstimates, repairResponsesAssistantOrdering, resolveUpstream, stripKernelSummaries, usageGradeInputBaseline, type Prepared } from "../server.js";
+import { foldViewMeasure, buildForwardTarget, outboundPayloadBreakdown, registerRequestAbort, beginStreamKeepalive, effectiveTokenCount, googlePathKind, imageBillingFor, imageTokenCapFor, inboundResignCredential, outboundContextEstimates, repairResponsesAssistantOrdering, resolveUpstream, stripKernelSummaries, usageGradeInputBaseline, type Prepared } from "../server.js";
 
 /** Infer the wire protocol from the request path for compat-role rewrites on
  *  requests the pipeline did not prepare (passthrough). Mirrors the path
@@ -1721,6 +1721,10 @@ export async function forward(
                     // so the model still sees its own compress call + result.
                     const turn = core.processTurn({
                         messages: prepared.originalMessages,
+                        measureFoldView: foldViewMeasure(prepared.protocol, prepared.originalMessages, prepared.responsesProjection, (messages, state) => {
+                            const viewed = applyAbsorbView(messages, state, loopConfig, effectiveTokenCount(prepared.session, messages).tokens);
+                            return prepared.dropReasoning ? prepared.dropReasoning(viewed, true) : viewed;
+                        }),
                         state: prepared.session.state,
                         config: loopConfig,
                         // #1492 doctrine (secondary processTurn feeds): the round-2

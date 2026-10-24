@@ -1,4 +1,5 @@
 import { activeBlocks, coveredMessageIds } from "./state.js";
+import { blockHasCarrier, hideConsumedCompressCalls } from "./hide-consumed.js";
 import type { CompressionState, CoreMessage } from "./types.js";
 
 export const SUMMARY_HEADER = "[Compressed conversation section]";
@@ -78,6 +79,112 @@ export interface PruneOptions {
    * call still awaiting its result is deleted while its bare-name twin survives.
    */
   isCompressTool?: (toolName: string) => boolean;
+}
+
+export type FoldViewMeasure = (
+  messages: CoreMessage[],
+  renderState: CompressionState,
+) => number;
+
+/** Only missing raw coverage without an existing caller-carried summary is an
+ * archive candidate. Already-pruned views must keep their useful carrier. */
+export function partialFoldBlocks(
+  messages: CoreMessage[],
+  state: CompressionState,
+  isCompressTool?: (name: string) => boolean,
+): import("./types.js").CompressionBlock[] {
+  const consumed = new Set(
+    state.blocks.flatMap((block) => block.directBlockIds),
+  );
+  const present = new Set(
+    messages.filter((m) => typeof m.id === "string").map((m) => baseIdOf(m.id)),
+  );
+  return activeBlocks(state).filter((block) => {
+    if (
+      block.expanded ||
+      consumed.has(block.blockId) ||
+      blockHasCarrier(block, messages, isCompressTool)
+    )
+      return false;
+    const covered = new Set(block.effectiveMessageIds.map(baseIdOf));
+    let live = 0;
+    for (const id of covered) if (present.has(id)) live++;
+    return live > 0 && live < covered.size;
+  });
+}
+
+/** A render-only selection: durable activity, originals and refs never change.
+ * Start with partial candidates unfolded, then accept strict measured gains. */
+export function planFoldRender(
+  messages: CoreMessage[],
+  state: CompressionState,
+  options: PruneOptions & { measureView: FoldViewMeasure },
+): {
+  messages: CoreMessage[];
+  renderState: CompressionState;
+  suppressedBlockIds: string[];
+} {
+  const candidates = partialFoldBlocks(messages, state, options.isCompressTool);
+  const selected = chooseFoldRendering(
+    candidates.map((block) => block.blockId),
+    (suppressed) => {
+      const renderState = foldRenderState(state, suppressed);
+      return { messages: prune(messages, renderState, options), renderState };
+    },
+    (view) =>
+      options.measureView(
+        hideConsumedCompressCalls(
+          view.renderState,
+          view.messages,
+          options.isCompressTool,
+        ).messages,
+        view.renderState,
+      ),
+  );
+  return { ...selected.view, suppressedBlockIds: selected.suppressedBlockIds };
+}
+
+export function foldRenderState(
+  state: CompressionState,
+  suppressed: ReadonlySet<string>,
+): CompressionState {
+  return suppressed.size === 0
+    ? state
+    : {
+        ...state,
+        blocks: state.blocks.map((block) =>
+          suppressed.has(block.blockId) ? { ...block, active: false } : block,
+        ),
+      };
+}
+
+export function chooseFoldRendering<T>(
+  candidates: string[],
+  render: (suppressed: ReadonlySet<string>) => T,
+  measure: (view: T) => number,
+): { view: T; suppressedBlockIds: string[] } {
+  const suppressed = new Set(candidates);
+  let view = render(suppressed);
+  if (candidates.length === 0) return { view, suppressedBlockIds: [] };
+  const cost = (value: T) => {
+    const size = measure(value);
+    if (!Number.isFinite(size) || size < 0)
+      throw new Error(
+        "InvalidFoldViewMeasure: expected a finite nonnegative serialization cost",
+      );
+    return size;
+  };
+  let size = cost(view);
+  for (const id of candidates) {
+    suppressed.delete(id);
+    const candidate = render(suppressed);
+    const next = cost(candidate);
+    if (next < size) {
+      view = candidate;
+      size = next;
+    } else suppressed.add(id);
+  }
+  return { view, suppressedBlockIds: [...suppressed] };
 }
 
 export function prune(
@@ -525,7 +632,8 @@ function stripOrphanedToolCalls(
     if (m.contentType === "tool-result") {
       if (m.toolCallId) answeredCallIds.add(m.toolCallId);
     } else if (m.contentType === "tool-call" && m.toolCallId) {
-      if (typeof m.toolName === "string" && isCompressTool(m.toolName)) continue;
+      if (typeof m.toolName === "string" && isCompressTool(m.toolName))
+        continue;
       if (!answeredCallIds.has(m.toolCallId)) drop.add(i);
     }
   }

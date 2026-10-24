@@ -31,6 +31,8 @@ export {
 } from "./refs.js";
 export {
   prune,
+  planFoldRender,
+  partialFoldBlocks,
   baseIdOf,
   isCovered,
   SUMMARY_HEADER,
@@ -38,6 +40,8 @@ export {
   isSummaryMessageId,
   isRenderedSummaryMessage,
 } from "./prune.js";
+export type { FoldViewMeasure } from "./prune.js";
+export { blockHasCarrier } from "./hide-consumed.js";
 export { syncBlocks } from "./sync.js";
 export {
   resolveBoundaries,
